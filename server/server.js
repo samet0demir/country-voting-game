@@ -3,7 +3,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
 const dotenv = require('dotenv');
-const { pool, initDb } = require('./models/db'); // db.js’den pool ve initDb’i al
+const { pool, initDb } = require('./models/db');
 
 // Load environment variables
 dotenv.config();
@@ -18,9 +18,9 @@ const io = socketIo(server, {
   }
 });
 
-// Initialize database (hata kontrolüyle)
+// Initialize database
 try {
-  initDb(); // Veritabanını başlat
+  initDb();
 } catch (error) {
   console.error('Veritabanı başlatılırken hata oluştu:', error);
 }
@@ -71,12 +71,38 @@ io.on('connection', (socket) => {
   socket.on('globalMessage', (data) => {
     io.to('global').emit('globalMessage', data);
   });
+
+  // Oy güncellemesi için düzenli olarak veri gönder
+  const sendVoteUpdates = async () => {
+    try {
+      const stats = await pool.query('SELECT name, votes_count FROM countries ORDER BY votes_count DESC');
+      io.emit('voteUpdate', stats.rows);
+    } catch (err) {
+      console.error('Oy istatistiklerini alırken hata:', err.message);
+    }
+  };
+
+  // İlk bağlantıda oy verilerini gönder
+  sendVoteUpdates();
   
   // Bağlantı kesildi
   socket.on('disconnect', () => {
     console.log('Müşteri ayrıldı');
   });
 });
+
+// Her yeni oy için güncelleme yayını
+const broadcastVoteUpdate = async () => {
+  try {
+    const stats = await pool.query('SELECT name, votes_count FROM countries ORDER BY votes_count DESC');
+    io.emit('voteUpdate', stats.rows);
+  } catch (err) {
+    console.error('Oy istatistiklerini alırken hata:', err.message);
+  }
+};
+
+// Vote Controller'a erişim için dışarı çıkar
+app.set('broadcastVoteUpdate', broadcastVoteUpdate);
 
 // Server'ı başlat
 const PORT = process.env.PORT || 5000;

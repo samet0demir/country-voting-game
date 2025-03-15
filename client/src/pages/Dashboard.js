@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import CountryMap from '../components/map/CountryMap';
 import VotingChart from '../components/VotingChart';
+import allCountries from '../data/countries';
 
 const Dashboard = () => {
   const [countries, setCountries] = useState([]);
@@ -11,50 +12,42 @@ const Dashboard = () => {
   const [error, setError] = useState('');
   const [votedToday, setVotedToday] = useState(false);
 
-  // Sample list of countries
-  const countryOptions = [
-    'USA', 'Germany', 'France', 'Japan', 'Brazil', 
-    'Australia', 'India', 'Turkey', 'Canada', 'China', 
-    'Russia', 'UK', 'Italy', 'Spain', 'Mexico',
-    'Argentina', 'South Korea', 'Indonesia', 'Egypt', 'Nigeria'
-  ];
+  const fetchCountries = async () => {
+    try {
+      const res = await axios.get('/api/countries/stats');
+      setCountries(res.data);
+      setLoading(false);
+    } catch (err) {
+      setError('Failed to fetch countries');
+      setLoading(false);
+    }
+  };
+
+  const checkVotedToday = async () => {
+    try {
+      // Use the new dedicated endpoint to check if user has voted
+      const token = localStorage.getItem('token');
+      
+      if (token) {
+        const config = {
+          headers: {
+            'x-auth-token': token
+          }
+        };
+        
+        const res = await axios.get('/api/countries/check-voted', config);
+        setVotedToday(res.data.hasVoted);
+        
+        if (res.data.hasVoted) {
+          setMessage(`You have already voted for ${res.data.votedCountry} today`);
+        }
+      }
+    } catch (err) {
+      console.error('Error checking vote status:', err);
+    }
+  };
 
   useEffect(() => {
-    const fetchCountries = async () => {
-      try {
-        const res = await axios.get('/api/countries/stats');
-        setCountries(res.data);
-        setLoading(false);
-      } catch (err) {
-        setError('Failed to fetch countries');
-        setLoading(false);
-      }
-    };
-
-    const checkVotedToday = async () => {
-      try {
-        // Use the new dedicated endpoint to check if user has voted
-        const token = localStorage.getItem('token');
-        
-        if (token) {
-          const config = {
-            headers: {
-              'x-auth-token': token
-            }
-          };
-          
-          const res = await axios.get('/api/countries/check-voted', config);
-          setVotedToday(res.data.hasVoted);
-          
-          if (res.data.hasVoted) {
-            setMessage(`You have already voted for ${res.data.votedCountry} today`);
-          }
-        }
-      } catch (err) {
-        console.error('Error checking vote status:', err);
-      }
-    };
-
     // Fetch countries for everyone (even non-logged in users)
     fetchCountries();
     
@@ -89,8 +82,7 @@ const Dashboard = () => {
       await axios.post('/api/countries/vote', { country: votingCountry });
       
       // Refresh countries list
-      const res = await axios.get('/api/countries/stats');
-      setCountries(res.data);
+      fetchCountries();
       
       setMessage('Vote recorded successfully!');
       setVotedToday(true);
@@ -99,6 +91,11 @@ const Dashboard = () => {
       setMessage(err.response?.data?.msg || 'Failed to record vote');
       setLoading(false);
     }
+  };
+
+  const refreshData = () => {
+    fetchCountries();
+    checkVotedToday();
   };
   
   if (loading && countries.length === 0) {
@@ -132,7 +129,7 @@ const Dashboard = () => {
                     disabled={votedToday}
                   >
                     <option value="">Select a country</option>
-                    {countryOptions.map((country, index) => (
+                    {allCountries.map((country, index) => (
                       <option key={index} value={country}>
                         {country}
                       </option>
@@ -173,9 +170,14 @@ const Dashboard = () => {
           <div className="card">
             <div className="card-header bg-primary text-white">
               <h5 className="card-title m-0">Interactive Map</h5>
+              <p className="text-white small m-0 mt-1">Click on a country marker to view details and vote directly from the map</p>
             </div>
             <div className="card-body p-0">
-              <CountryMap countries={countries} />
+              <CountryMap 
+                countries={countries} 
+                votedToday={votedToday} 
+                refreshData={refreshData}
+              />
             </div>
           </div>
         </div>

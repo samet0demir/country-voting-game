@@ -23,6 +23,11 @@ const Navbar = () => {
       <li className="nav-item">
         <Link className="nav-link" to="/chat/global">Global Chat</Link>
       </li>
+      {user && user.country && (
+        <li className="nav-item">
+          <Link className="nav-link" to={`/chat/country/${user.country}`}>National Chat</Link>
+        </li>
+      )}
       <li className="nav-item">
         <a href="#!" className="nav-link" onClick={logout}>
           Logout
