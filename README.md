@@ -106,4 +106,4 @@ A full-stack web application that allows users to vote for countries, view votin
 ### Chat
 - `GET /api/chats/country/:country` - Get chat messages for a country (protected)
 - `GET /api/chats/global` - Get global chat messages (protected)
-- `POST /api/chats` - Create a chat message (protected)
+- `POST /api/chats` - Create a chat message (protected)Test SSH
