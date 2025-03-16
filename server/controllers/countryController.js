@@ -4,6 +4,7 @@ const { pool } = require('../models/db');
 exports.getAllCountries = async (req, res) => {
   try {
     const countries = await pool.query('SELECT * FROM countries ORDER BY votes_count DESC');
+    console.log(`Tüm ülkeler alındı: ${countries.rows.length} ülke`);
     res.json(countries.rows);
   } catch (err) {
     console.error(err.message);
@@ -37,6 +38,8 @@ exports.voteForCountry = async (req, res) => {
       return res.status(400).json({ msg: 'You have already voted today' });
     }
 
+    console.log(`Oy kaydediliyor: Kullanıcı ${userId}, Ülke: "${country}"`);
+
     // Create vote record
     await pool.query(
       'INSERT INTO votes (user_id, country) VALUES ($1, $2)',
@@ -49,9 +52,20 @@ exports.voteForCountry = async (req, res) => {
       [country]
     );
 
+    console.log(`Oy başarıyla kaydedildi: Ülke "${country}"`);
+
+    // Broadcast vote update via WebSocket
+    const broadcastVoteUpdate = req.app.get('broadcastVoteUpdate');
+    if (broadcastVoteUpdate) {
+      console.log('WebSocket üzerinden oy güncellemesi yayınlanıyor...');
+      await broadcastVoteUpdate();
+    } else {
+      console.warn('broadcastVoteUpdate fonksiyonu bulunamadı!');
+    }
+
     res.json({ msg: 'Vote recorded successfully' });
   } catch (err) {
-    console.error(err.message);
+    console.error(`Oy kaydedilirken hata: ${err.message}`);
     res.status(500).send('Server error');
   }
 };
@@ -60,9 +74,16 @@ exports.voteForCountry = async (req, res) => {
 exports.getVotingStats = async (req, res) => {
   try {
     const stats = await pool.query('SELECT name, votes_count FROM countries ORDER BY votes_count DESC');
-    res.json(stats.rows);
+    
+    // Oy sayısına göre sıralama
+    const sortedStats = stats.rows.sort((a, b) => (b.votes_count || 0) - (a.votes_count || 0));
+    
+    console.log(`Oy istatistikleri alındı: ${sortedStats.length} ülke`);
+    console.log(`En çok oy alan ülkeler:`, sortedStats.slice(0, 3).map(c => `${c.name}: ${c.votes_count || 0}`));
+    
+    res.json(sortedStats);
   } catch (err) {
-    console.error(err.message);
+    console.error(`Oy istatistiklerini alırken hata: ${err.message}`);
     res.status(500).send('Server error');
   }
 };
@@ -88,12 +109,17 @@ exports.checkVoted = async (req, res) => {
       [userId, today, tomorrow]
     );
 
+    const hasVoted = existingVote.rows.length > 0;
+    const votedCountry = hasVoted ? existingVote.rows[0].country : null;
+    
+    console.log(`Kullanıcı ${userId} için oy kontrolü: ${hasVoted ? `Oy kullanmış (${votedCountry})` : 'Henüz oy kullanmamış'}`);
+    
     res.json({ 
-      hasVoted: existingVote.rows.length > 0,
-      votedCountry: existingVote.rows.length > 0 ? existingVote.rows[0].country : null
+      hasVoted: hasVoted,
+      votedCountry: votedCountry
     });
   } catch (err) {
-    console.error(err.message);
+    console.error(`Oy kontrolü sırasında hata: ${err.message}`);
     res.status(500).send('Server error');
   }
 };

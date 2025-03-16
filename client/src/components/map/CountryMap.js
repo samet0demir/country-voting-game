@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { AuthContext } from '../../context/AuthContext';
 import io from 'socket.io-client';
+import axios from 'axios';
 
 // NOT: GeoJSON verisi büyük olduğu için burada import etmeniz gerekecek
 // import countriesGeoJson from '../../data/countries.geo.json';
@@ -12,20 +13,19 @@ import io from 'socket.io-client';
 // Örnek: const [geoJsonData, setGeoJsonData] = useState(null);
 // useEffect(() => { fetch('/countries.geo.json').then(res => res.json()).then(data => setGeoJsonData(data)); }, []);
 
-const CountryMap = ({ countries }) => {
+const CountryMap = (props) => {
   const { user, isAuthenticated } = useContext(AuthContext);
   const [socket, setSocket] = useState(null);
-  const [countriesData, setCountriesData] = useState(countries);
+  const [countriesData, setCountriesData] = useState(props.countries);
   const [geoJsonData, setGeoJsonData] = useState(null);
 
   // GeoJSON verisi için
   useEffect(() => {
-    // GeoJSON verisi burada yüklenecek - örnek olarak import edildiğini varsayıyoruz
-    // Gerçek uygulamada bu dosyayı public klasörüne ekleyip fetch ile çekebilirsiniz
-    // fetch('/countries.geo.json').then(res => res.json()).then(data => setGeoJsonData(data));
-    
-    // Şimdilik örnek için boş bir obje kullanıyoruz
-    setGeoJsonData({ type: "FeatureCollection", features: [] });
+    // GeoJSON verisini public klasöründen çekiyoruz
+    fetch('/countries.geo.json')
+      .then(res => res.json())
+      .then(data => setGeoJsonData(data))
+      .catch(error => console.error("GeoJSON verisi yüklenemedi:", error));
   }, []);
 
   // Socket.io bağlantısı
@@ -42,6 +42,11 @@ const CountryMap = ({ countries }) => {
       newSocket.disconnect();
     };
   }, []);
+  
+  // Countries prop'u değiştiğinde state'i güncelle
+  useEffect(() => {
+    setCountriesData(props.countries);
+  }, [props.countries]);
 
   // Ülkelerin oy verilerine göre renk hesaplama
   const getCountryColor = (countryName) => {
@@ -85,8 +90,9 @@ const CountryMap = ({ countries }) => {
 
   // GeoJSON stil fonksiyonu
   const style = (feature) => {
+    const countryName = getMatchingCountryName(feature);
     return {
-      fillColor: getCountryColor(feature.properties.name),
+      fillColor: getCountryColor(countryName),
       weight: 1,
       opacity: 1,
       color: 'gray',
@@ -94,25 +100,97 @@ const CountryMap = ({ countries }) => {
     };
   };
 
+  // Haritadan oy verme fonksiyonu
+  const handleVoteFromMap = async (countryName) => {
+    if (!isAuthenticated) {
+      // Giriş yapma sayfasına yönlendir
+      window.location.href = '/login';
+      return;
+    }
+    
+    try {
+      await axios.post('/api/countries/vote', { country: countryName });
+      // Verileri yenile ve bildirim göster
+      if (props.refreshData) {
+        props.refreshData();
+      }
+      alert(`${countryName} için oy verildi!`);
+    } catch (error) {
+      const errorMessage = error.response?.data?.msg || "Oy kaydedilirken bir hata oluştu.";
+      alert(errorMessage);
+    }
+  };
+
+  // GeoJSON ve countries.js arasında ülke adı eşleştirme yardımcı fonksiyonu
+  const getMatchingCountryName = (feature) => {
+    // GeoJSON'dan gelen isim seçenekleri
+    const possibleNames = [
+      feature.properties.NAME,
+      feature.properties.name,
+      feature.properties.NAME_LONG,
+      feature.properties.NAME_EN
+    ].filter(Boolean); // undefined/null değerleri kaldır
+    
+    // Eğer hiç isim bulunamadıysa boş değer döndür
+    if (possibleNames.length === 0) return "";
+    
+    // Veri setimizde bulunan bir isimle eşleşme ara
+    for (const possibleName of possibleNames) {
+      // Tam eşleşme
+      const exactMatch = countriesData.find(c => 
+        c.name.toLowerCase() === possibleName.toLowerCase()
+      );
+      if (exactMatch) return exactMatch.name;
+      
+      // Kısmi eşleşme (X içinde Y kontrolü)
+      const partialMatch = countriesData.find(c => 
+        possibleName.toLowerCase().includes(c.name.toLowerCase()) || 
+        c.name.toLowerCase().includes(possibleName.toLowerCase())
+      );
+      if (partialMatch) return partialMatch.name;
+    }
+    
+    // Eşleşme bulunamadıysa ilk ismi döndür
+    return possibleNames[0];
+  };
+
   // Her ülke için popup içeriği
   const onEachFeature = (feature, layer) => {
-    const countryName = feature.properties.name;
+    // Ülke adını veri setimizdeki adlarla eşleştir
+    const countryName = getMatchingCountryName(feature);
+    
+    // Veri setinde eşleşen ülkeyi bul
     const country = countriesData.find(c => c.name === countryName);
     const votes = country ? country.votes_count : 0;
     
     // Popup içeriğini hazırla
-    const popupContent = `
+    const popupContent = document.createElement('div');
+    popupContent.innerHTML = `
       <div>
         <h5>${countryName}</h5>
-        <p>Votes: ${votes}</p>
-        ${isAuthenticated && user && user.country === countryName ? 
-          `<a href="/chat/country/${countryName}" class="btn btn-sm btn-primary">Join Chat</a>` : 
-          isAuthenticated ? 
-          `<div class="small text-muted mt-2">Sadece kendi ülkenizin chat'ine erişebilirsiniz</div>` :
-          `<div class="small text-muted mt-2">Chat'e erişmek için giriş yapmalısınız</div>`
-        }
+        <p>Oylar: ${votes}</p>
       </div>
     `;
+    
+    // Kullanıcı giriş yapmışsa ve bugün oy verdiyse bilgi mesajı göster
+    if (isAuthenticated && props.votedToday) {
+      const message = document.createElement('div');
+      message.className = 'small text-warning mt-2';
+      message.innerText = 'Bugün zaten oy verdiniz';
+      popupContent.appendChild(message);
+    } else {
+      // Giriş yapmış veya yapmamış tüm kullanıcılar için oy verme butonu göster
+      // Giriş yapmamış kullanıcı butona tıklayınca login sayfasına yönlendirilecek
+      const voteButton = document.createElement('button');
+      voteButton.className = 'btn btn-sm btn-success w-100';
+      voteButton.innerText = 'Bu Ülkeye Oy Ver';
+      voteButton.onclick = (e) => {
+        e.preventDefault();
+        layer.closePopup();
+        handleVoteFromMap(countryName);
+      };
+      popupContent.appendChild(voteButton);
+    }
     
     layer.bindPopup(popupContent);
   };
