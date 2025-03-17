@@ -23,26 +23,32 @@ exports.voteForCountry = async (req, res) => {
       return res.status(400).json({ msg: 'Please select a country to vote' });
     }
 
-    // Check if user has already voted today
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    // Check if user has already voted in the last 2 hours
+    const twoHoursAgo = new Date();
+    twoHoursAgo.setHours(twoHoursAgo.getHours() - 2);
 
     const existingVote = await pool.query(
-      'SELECT * FROM votes WHERE user_id = $1 AND vote_date >= $2 AND vote_date < $3',
-      [userId, today, tomorrow]
+      'SELECT * FROM votes WHERE user_id = $1 AND vote_date >= $2 ORDER BY vote_date DESC LIMIT 1',
+      [userId, twoHoursAgo]
     );
 
     if (existingVote.rows.length > 0) {
-      return res.status(400).json({ msg: 'You have already voted today' });
+      const lastVoteTime = new Date(existingVote.rows[0].vote_date);
+      const nextVoteTime = new Date(lastVoteTime);
+      nextVoteTime.setHours(nextVoteTime.getHours() + 2);
+      
+      return res.status(400).json({ 
+        msg: 'Şu anda oy veremezsiniz. Son 2 saat içinde oy kullandınız.', 
+        lastVoteTime: lastVoteTime,
+        nextVoteTime: nextVoteTime
+      });
     }
 
     console.log(`Oy kaydediliyor: Kullanıcı ${userId}, Ülke: "${country}"`);
 
     // Create vote record
-    await pool.query(
-      'INSERT INTO votes (user_id, country) VALUES ($1, $2)',
+    const newVote = await pool.query(
+      'INSERT INTO votes (user_id, country) VALUES ($1, $2) RETURNING vote_date',
       [userId, country]
     );
 
@@ -63,7 +69,16 @@ exports.voteForCountry = async (req, res) => {
       console.warn('broadcastVoteUpdate fonksiyonu bulunamadı!');
     }
 
-    res.json({ msg: 'Vote recorded successfully' });
+    // Calculate next vote time
+    const voteTime = new Date(newVote.rows[0].vote_date);
+    const nextVoteTime = new Date(voteTime);
+    nextVoteTime.setHours(nextVoteTime.getHours() + 2);
+
+    res.json({ 
+      msg: 'Vote recorded successfully',
+      lastVoteTime: voteTime,
+      nextVoteTime: nextVoteTime
+    });
   } catch (err) {
     console.error(`Oy kaydedilirken hata: ${err.message}`);
     res.status(500).send('Server error');
@@ -88,7 +103,7 @@ exports.getVotingStats = async (req, res) => {
   }
 };
 
-// Check if user has voted today
+// Check if user has voted recently and can't vote again
 exports.checkVoted = async (req, res) => {
   // If no user is logged in, return false
   if (!req.user) {
@@ -98,25 +113,35 @@ exports.checkVoted = async (req, res) => {
   try {
     const userId = req.user.id;
     
-    // Check if user has already voted today
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    // Check if user has voted in the last 2 hours
+    const twoHoursAgo = new Date();
+    twoHoursAgo.setHours(twoHoursAgo.getHours() - 2);
 
     const existingVote = await pool.query(
-      'SELECT * FROM votes WHERE user_id = $1 AND vote_date >= $2 AND vote_date < $3',
-      [userId, today, tomorrow]
+      'SELECT * FROM votes WHERE user_id = $1 AND vote_date >= $2 ORDER BY vote_date DESC LIMIT 1',
+      [userId, twoHoursAgo]
     );
 
     const hasVoted = existingVote.rows.length > 0;
-    const votedCountry = hasVoted ? existingVote.rows[0].country : null;
+    let votedCountry = null;
+    let lastVoteTime = null;
+    let nextVoteTime = null;
+
+    if (hasVoted) {
+      votedCountry = existingVote.rows[0].country;
+      lastVoteTime = new Date(existingVote.rows[0].vote_date);
+      nextVoteTime = new Date(lastVoteTime);
+      nextVoteTime.setHours(nextVoteTime.getHours() + 2);
+    }
     
-    console.log(`Kullanıcı ${userId} için oy kontrolü: ${hasVoted ? `Oy kullanmış (${votedCountry})` : 'Henüz oy kullanmamış'}`);
+    console.log(`Kullanıcı ${userId} için oy kontrolü: ${hasVoted ? `Oy kullanmış (${votedCountry})` : 'Henüz oy kullanabilir'}`);
+    console.log(`lastVoteTime: ${lastVoteTime}, nextVoteTime: ${nextVoteTime}`);
     
     res.json({ 
       hasVoted: hasVoted,
-      votedCountry: votedCountry
+      votedCountry: votedCountry,
+      lastVoteTime: lastVoteTime,
+      nextVoteTime: nextVoteTime
     });
   } catch (err) {
     console.error(`Oy kontrolü sırasında hata: ${err.message}`);

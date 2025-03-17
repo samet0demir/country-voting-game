@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import CountryMap from '../components/map/CountryMap';
 import VotingChart from '../components/VotingChart';
+import VoteCountdownTimer from '../components/VoteCountdownTimer';
 import allCountries from '../data/countries';
 
 const Dashboard = () => {
@@ -11,6 +12,8 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [votedToday, setVotedToday] = useState(false);
+  const [lastVoteTime, setLastVoteTime] = useState(null);
+  const [nextVoteTime, setNextVoteTime] = useState(null);
 
   const fetchCountries = async () => {
     try {
@@ -25,7 +28,7 @@ const Dashboard = () => {
 
   const checkVotedToday = async () => {
     try {
-      // Use the new dedicated endpoint to check if user has voted
+      // Use the dedicated endpoint to check if user has voted
       const token = localStorage.getItem('token');
       
       if (token) {
@@ -36,10 +39,22 @@ const Dashboard = () => {
         };
         
         const res = await axios.get('/api/countries/check-voted', config);
+        console.log('Check voted response:', res.data);
+        
         setVotedToday(res.data.hasVoted);
         
         if (res.data.hasVoted) {
-          setMessage(`You have already voted for ${res.data.votedCountry} today`);
+          setMessage(`Son oyunuzu ${res.data.votedCountry} için kullandınız`);
+          setLastVoteTime(res.data.lastVoteTime);
+          setNextVoteTime(res.data.nextVoteTime);
+          
+          console.log('Vote countdown info:', {
+            lastVoteTime: res.data.lastVoteTime,
+            nextVoteTime: res.data.nextVoteTime
+          });
+        } else {
+          setLastVoteTime(null);
+          setNextVoteTime(null);
         }
       }
     } catch (err) {
@@ -57,6 +72,15 @@ const Dashboard = () => {
     // Only check if voted when there is a token (user is logged in)
     if (localStorage.getItem('token')) {
       checkVotedToday();
+      
+      // Set up interval to check vote status every minute
+      const voteCheckInterval = setInterval(checkVotedToday, 60000);
+      
+      // Clean up the vote check interval
+      return () => {
+        clearInterval(intervalId);
+        clearInterval(voteCheckInterval);
+      };
     }
     
     // Clean up interval on component unmount
@@ -80,15 +104,24 @@ const Dashboard = () => {
     
     try {
       setLoading(true);
-      await axios.post('/api/countries/vote', { country: votingCountry });
+      const response = await axios.post('/api/countries/vote', { country: votingCountry });
+      console.log('Vote response:', response.data);
       
       // Refresh countries list
       fetchCountries();
       
-      setMessage('Vote recorded successfully!');
+      setMessage('Oy başarıyla kaydedildi!');
       setVotedToday(true);
+      setLastVoteTime(response.data.lastVoteTime);
+      setNextVoteTime(response.data.nextVoteTime);
       setLoading(false);
     } catch (err) {
+      console.log('Vote error response:', err.response?.data);
+      
+      if (err.response?.data?.lastVoteTime && err.response?.data?.nextVoteTime) {
+        setLastVoteTime(err.response.data.lastVoteTime);
+        setNextVoteTime(err.response.data.nextVoteTime);
+      }
       setMessage(err.response?.data?.msg || 'Failed to record vote');
       setLoading(false);
     }
@@ -99,26 +132,43 @@ const Dashboard = () => {
     checkVotedToday();
   };
   
+  // Check if the user can vote again by comparing next vote time with current time
+  const canVoteAgain = !votedToday || (nextVoteTime && new Date() >= new Date(nextVoteTime));
+  
   if (loading && countries.length === 0) {
     return <div className="text-center mt-5">Loading...</div>;
   }
+
+  console.log('Rendering dashboard with:', {
+    votedToday, 
+    canVoteAgain, 
+    nextVoteTime,
+    lastVoteTime
+  });
 
   return (
     <div className="container">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h2 className="mb-0"><i className="bi bi-map-fill me-2"></i>Dünya Haritası</h2>
         
-        {votedToday && (
+        {votedToday && !canVoteAgain && (
+          <div className="badge bg-warning p-2 d-flex align-items-center">
+            <i className="bi bi-hourglass-split me-2"></i>
+            Oy hakkınız için bekliyorsunuz
+          </div>
+        )}
+        
+        {canVoteAgain && (
           <div className="badge bg-success p-2 d-flex align-items-center">
             <i className="bi bi-check-circle me-2"></i>
-            Bugün oy kullandınız!
+            Oy verebilirsiniz!
           </div>
         )}
       </div>
       
       {message && (
-        <div className={`alert ${message.includes('success') ? 'alert-success' : 'alert-danger'} alert-dismissible fade show`}>
-          <i className={`bi ${message.includes('success') ? 'bi-check-circle' : 'bi-exclamation-triangle'} me-2`}></i>
+        <div className={`alert ${message.includes('başarıyla') ? 'alert-success' : 'alert-warning'} alert-dismissible fade show`}>
+          <i className={`bi ${message.includes('başarıyla') ? 'bi-check-circle' : 'bi-exclamation-triangle'} me-2`}></i>
           {message}
           <button type="button" className="btn-close" onClick={() => setMessage('')} aria-label="Close"></button>
         </div>
@@ -150,7 +200,7 @@ const Dashboard = () => {
             <div className="card-body p-0">
               <CountryMap 
                 countries={countries} 
-                votedToday={votedToday} 
+                votedToday={votedToday && !canVoteAgain} 
                 refreshData={refreshData}
                 message={message}
               />
@@ -169,6 +219,12 @@ const Dashboard = () => {
               </h5>
             </div>
             <div className="card-body">
+              {votedToday && !canVoteAgain && nextVoteTime && (
+                <div className="mb-3 p-3 bg-light rounded">
+                  <VoteCountdownTimer nextVoteTime={nextVoteTime} />
+                </div>
+              )}
+              
               <form onSubmit={handleVote}>
                 <div className="mb-3">
                   <label className="form-label">
@@ -179,7 +235,7 @@ const Dashboard = () => {
                     className="form-select"
                     value={votingCountry}
                     onChange={(e) => setVotingCountry(e.target.value)}
-                    disabled={votedToday}
+                    disabled={votedToday && !canVoteAgain}
                   >
                     <option value="">Bir ülke seçin</option>
                     {allCountries.map((country, index) => (
@@ -193,13 +249,20 @@ const Dashboard = () => {
                 <button 
                   type="submit" 
                   className="btn btn-primary w-100"
-                  disabled={votedToday}
+                  disabled={votedToday && !canVoteAgain}
                 >
-                  {votedToday 
-                    ? <><i className="bi bi-lock me-2"></i>Bugün zaten oy verdiniz</> 
+                  {votedToday && !canVoteAgain 
+                    ? <><i className="bi bi-hourglass-split me-2"></i>Oy hakkınız için bekliyorsunuz</> 
                     : <><i className="bi bi-hand-thumbs-up me-2"></i>Seçilen Ülkeye Oy Ver</>}
                 </button>
               </form>
+              
+              {votedToday && !canVoteAgain && lastVoteTime && (
+                <div className="small text-muted mt-2">
+                  <i className="bi bi-clock-history me-1"></i>
+                  Son oy: {new Date(lastVoteTime).toLocaleTimeString()}
+                </div>
+              )}
             </div>
           </div>
           

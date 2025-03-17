@@ -77,6 +77,7 @@ io.on('connection', (socket) => {
     try {
       const stats = await pool.query('SELECT name, votes_count FROM countries ORDER BY votes_count DESC');
       io.emit('voteUpdate', stats.rows);
+      console.log('Oy güncellemesi gönderildi:', stats.rows.filter(c => c.votes_count > 0).length, 'ülke');
     } catch (err) {
       console.error('Oy istatistiklerini alırken hata:', err.message);
     }
@@ -96,10 +97,20 @@ const broadcastVoteUpdate = async () => {
   try {
     const stats = await pool.query('SELECT name, votes_count FROM countries ORDER BY votes_count DESC');
     io.emit('voteUpdate', stats.rows);
+    console.log('Oy güncellemesi yayınlandı');
   } catch (err) {
     console.error('Oy istatistiklerini alırken hata:', err.message);
   }
 };
+
+// Düzenli olarak oy güncellemesi gönder (3 saniyede bir)
+setInterval(async () => {
+  try {
+    await broadcastVoteUpdate();
+  } catch (err) {
+    console.error('Oy güncellemesi zamanlayıcısı hatası:', err);
+  }
+}, 3000);
 
 // Vote Controller'a erişim için dışarı çıkar
 app.set('broadcastVoteUpdate', broadcastVoteUpdate);

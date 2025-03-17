@@ -38,4 +38,9 @@ router.get('/profile', auth, userController.getProfile);
 // @access  Private
 router.put('/update', auth, userController.updateProfile);
 
+// @route   GET api/users/voting-history
+// @desc    Get user's voting history
+// @access  Private
+router.get('/voting-history', auth, userController.getVotingHistory);
+
 module.exports = router;

@@ -172,11 +172,51 @@ const CountryMap = (props) => {
       </div>
     `;
     
-    // Kullanıcı giriş yapmışsa ve bugün oy verdiyse bilgi mesajı göster
+    // Kullanıcı giriş yapmışsa ve son 2 saat içinde oy verdiyse bilgi mesajı göster
     if (isAuthenticated && props.votedToday) {
       const message = document.createElement('div');
       message.className = 'small text-warning mt-2';
-      message.innerText = 'Bugün zaten oy verdiniz';
+      
+      if (props.remainingTime > 0) {
+        // Oy verme işleminin ne zaman tamamlanacağını hesapla
+        const remainingMs = props.remainingTime;
+        const now = new Date();
+        const completeTime = new Date(now.getTime() + remainingMs);
+        
+        // Tamamlanma saati ve dakikası
+        const completeHour = completeTime.getHours();
+        const completeMinute = completeTime.getMinutes();
+        
+        // Kalan süreyi hesapla
+        const hours = Math.floor(remainingMs / (1000 * 60 * 60));
+        const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((remainingMs % (1000 * 60)) / 1000);
+        
+        // Format display values
+        const displayHours = String(hours).padStart(2, '0');
+        const displayMinutes = String(minutes).padStart(2, '0');
+        const displaySeconds = String(seconds).padStart(2, '0');
+        
+        // Daha şık bir timer oluştur
+        const timerHTML = `
+          <div class="popup-timer text-center my-2">
+            <p class="small text-muted mb-1">Yeniden oy kullanabilmek için kalan süre:</p>
+            <div class="timer-display d-flex justify-content-center">
+              <span class="timer-box bg-danger text-white px-2 py-1 rounded">${displayHours}</span>
+              <span class="timer-sep px-1">:</span>
+              <span class="timer-box bg-danger text-white px-2 py-1 rounded">${displayMinutes}</span>
+              <span class="timer-sep px-1">:</span>
+              <span class="timer-box bg-danger text-white px-2 py-1 rounded">${displaySeconds}</span>
+            </div>
+            <p class="small text-muted mt-1">(Saat ${completeHour}:${String(completeMinute).padStart(2, '0')} itibariyle)</p>
+          </div>
+        `;
+        
+        message.innerHTML = timerHTML;
+      } else {
+        message.innerText = 'Şu anda oy veremezsiniz';
+      }
+      
       popupContent.appendChild(message);
     } else {
       // Giriş yapmış veya yapmamış tüm kullanıcılar için oy verme butonu göster

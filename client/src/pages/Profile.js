@@ -10,8 +10,10 @@ const Profile = () => {
     nickname: '',
     country: ''
   });
+  const [votingHistory, setVotingHistory] = useState([]);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [historyLoading, setHistoryLoading] = useState(true);
   const navigate = useNavigate();
 
   const [canChangeCountry, setCanChangeCountry] = useState(true);
@@ -48,8 +50,34 @@ const Profile = () => {
           setCanChangeCountry(true);
         }
       }
+
+      // Fetch voting history when user is loaded
+      fetchVotingHistory();
     }
   }, [isAuthenticated, loading, navigate, user]);
+
+  // Fetch the user's voting history
+  const fetchVotingHistory = async () => {
+    try {
+      setHistoryLoading(true);
+      console.log('Oy geçmişi alınıyor...');
+      
+      const config = {
+        headers: {
+          'x-auth-token': localStorage.getItem('token')
+        }
+      };
+      
+      const res = await axios.get('/api/users/voting-history', config);
+      console.log('Oy geçmişi alındı:', res.data);
+      setVotingHistory(res.data);
+      setHistoryLoading(false);
+    } catch (err) {
+      console.error('Oy geçmişi alınamadı:', err.response?.data || err.message);
+      setError('Could not load voting history. Please try again later.');
+      setHistoryLoading(false);
+    }
+  };
 
   const onChange = e => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -85,8 +113,8 @@ const Profile = () => {
       <h2 className="my-4">Profile Settings</h2>
       
       <div className="row">
-        <div className="col-md-6 mx-auto">
-          <div className="card">
+        <div className="col-md-6">
+          <div className="card mb-4">
             <div className="card-header bg-primary text-white">
               <h5 className="card-title m-0">Update Your Profile</h5>
             </div>
@@ -158,6 +186,65 @@ const Profile = () => {
                 </button>
               </form>
             </div>
+          </div>
+        </div>
+        
+        {/* New Voting History Card */}
+        <div className="col-md-6">
+          <div className="card">
+            <div className="card-header bg-primary text-white">
+              <h5 className="card-title m-0">
+                <i className="bi bi-clock-history me-2"></i>Oy Verme Geçmişiniz
+              </h5>
+            </div>
+            <div className="card-body">
+              {historyLoading ? (
+                <div className="text-center py-4">
+                  <div className="spinner-border text-primary" role="status">
+                    <span className="visually-hidden">Loading...</span>
+                  </div>
+                </div>
+              ) : votingHistory.length === 0 ? (
+                <div className="alert alert-info">
+                  <i className="bi bi-info-circle me-2"></i>
+                  Henüz hiçbir ülkeye oy vermediniz.
+                </div>
+              ) : (
+                <div className="table-responsive">
+                  <table className="table table-hover">
+                    <thead className="table-light">
+                      <tr>
+                        <th scope="col">#</th>
+                        <th scope="col">Ülke</th>
+                        <th scope="col">Oy Tarihi</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {votingHistory.map((vote, index) => (
+                        <tr key={index}>
+                          <td>{index + 1}</td>
+                          <td>
+                            <span className="d-flex align-items-center">
+                              <i className="bi bi-flag-fill me-2 text-danger"></i>
+                              {vote.country}
+                            </span>
+                          </td>
+                          <td>{new Date(vote.vote_date).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            {votingHistory.length > 0 && (
+              <div className="card-footer bg-light">
+                <small className="text-muted">
+                  <i className="bi bi-info-circle me-1"></i>
+                  En son oylarınız en üstte gösterilmektedir.
+                </small>
+              </div>
+            )}
           </div>
         </div>
       </div>

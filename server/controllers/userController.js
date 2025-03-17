@@ -167,3 +167,24 @@ exports.updateProfile = async (req, res) => {
     res.status(500).send('Server error');
   }
 };
+
+exports.getVotingHistory = async (req, res) => {
+  try {
+    // Debug için kullanıcı ID'sini yazdır
+    console.log('Kullanıcı ID:', req.user.id);
+    
+    const votingHistory = await pool.query(
+      `SELECT v.id, v.country, v.vote_date 
+       FROM votes v 
+       WHERE v.user_id = $1 
+       ORDER BY v.vote_date DESC`,
+      [req.user.id]
+    );
+    
+    console.log('Oy geçmişi bulundu:', votingHistory.rows.length);
+    res.json(votingHistory.rows);
+  } catch (err) {
+    console.error('Oy geçmişi alınırken hata:', err.message);
+    res.status(500).json({ msg: 'Server error', error: err.message });
+  }
+};
